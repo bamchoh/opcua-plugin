@@ -1,0 +1,11 @@
+{
+  "name": "OPC UA Plugin",
+  "entrypoint": "opcua-plugin.exe",
+  "version": "0.0.1",
+  "protocol_type": "opcua-cs",
+  "display_name": "OPC UA C#",
+  "variants": [],
+  "capabilities": {
+    "supports_node_publishing": true
+  }
+}

@@ -9,7 +9,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="plugin.json" />
+    <None Remove="Protos\common.proto" />
+    <None Remove="Protos\datastore_service.proto" />
     <None Remove="Protos\greet.proto" />
+    <None Remove="Protos\plugin_service.proto" />
+    <None Remove="Protos\variable_accessor_service.proto" />
   </ItemGroup>
 
   <ItemGroup>
@@ -24,8 +29,17 @@
 	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Core" Version="1.5.378.106" />
 	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Security.Certificates" Version="1.5.378.106" />
 	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Server" Version="1.5.378.106" />
-	  <Protobuf Include="Protos\greet.proto" GrpcServices="Server" />
-	  <Protobuf Include="Protos\plugin.proto" GrpcServices="Server" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Page Include="plugin.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+	  <Protobuf Include="Protos\common.proto" GrpcServices="Both" />
+	  <Protobuf Include="Protos\plugin_service.proto" GrpcServices="Server" ProtoRoot="Protos" />
+	  <Protobuf Include="Protos\datastore_service.proto" GrpcServices="Server" ProtoRoot="Protos" />
+	  <Protobuf Include="Protos\variable_accessor_service.proto" GrpcServices="Client" ProtoRoot="Protos" />
   </ItemGroup>
 
   <ItemGroup>
@@ -35,7 +49,7 @@
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="echo xcopy $(OutDir) D:\dev\go\modbus_simulator\build\bin\plugins\opcua-plugin-cs /s /e / q /y&#xD;&#xA;xcopy $(OutDir) D:\dev\go\modbus_simulator\build\bin\plugins\opcua-plugin-cs /s /e /q /y" />
+    <Exec Command="echo xcopy $(SolutionDir)\plugin.json $(OutDir)plugin.json /q /y&#xD;&#xA;xcopy $(SolutionDir)\plugin.json $(OutDir) /q /y&#xD;&#xA;&#xD;&#xA;mkdir D:\dev\go\modbus_simulator\build\bin\plugins\opcua-plugin-cs&#xD;&#xA;echo xcopy $(OutDir) D:\dev\go\modbus_simulator\build\bin\plugins\opcua-plugin-cs /s /e / q /y&#xD;&#xA;xcopy $(OutDir) D:\dev\go\modbus_simulator\build\bin\plugins\opcua-plugin-cs /s /e /q /y" />
   </Target>
 
 </Project>
