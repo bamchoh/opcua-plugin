@@ -59,7 +59,14 @@ namespace opcua_plugin.Infrastructure
 
         public async Task CreateAndStartAsync(CreateAndStartCommand cmd)
         {
-            // TODO: VariableStoreアクセサの設定もする必要あり
+            if (!string.IsNullOrEmpty(cmd.HostGrpcAddr))
+            {
+                Console.WriteLine($"Creating gRPC channel to {cmd.HostGrpcAddr}");
+                var channel = GrpcChannel.ForAddress(string.Format("http://{0}", cmd.HostGrpcAddr));
+                var client = new VariableAccessorService.VariableAccessorServiceClient(channel);
+                var accessor = new RemoteVariableStoreAccessor(client);
+                _factory.InjectVariableStore(accessor);
+            }
 
             PluginConfigDataModel config;
 
@@ -89,6 +96,16 @@ namespace opcua_plugin.Infrastructure
 
             var cts = new CancellationTokenSource();
             await server.StartAsync(cts.Token);
+        }
+
+        public void Stop()
+        {
+            if(_server == null)
+            {
+                return;
+            }
+
+            _server.Stop();
         }
 
         public string GetStatus()

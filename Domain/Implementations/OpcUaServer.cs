@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Hosting.Server;
 using Opc.Ua;
 using Opc.Ua.Server;
+using opcua_plugin.Infrastructure;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -9,6 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 
 namespace opcua_plugin.Domain.Implementations
 {
@@ -16,16 +18,16 @@ namespace opcua_plugin.Domain.Implementations
     {
         public NodeManager NodeManager;
 
-        public Directory NodeInfo;
-
         public CancellationToken CancelToken;
+
+        public RemoteVariableStoreAccessor Accessor;
 
         protected override MasterNodeManager CreateMasterNodeManager(IServerInternal server, ApplicationConfiguration configuration)
         {
             List<INodeManager> nodeManagers = new List<INodeManager>();
 
             // create the custom node managers.
-            NodeManager = new NodeManager(server, configuration, NodeInfo, CancelToken);
+            NodeManager = new NodeManager(server, configuration, Accessor, CancelToken);
             nodeManagers.Add(NodeManager);
 
             // create master node manager.
@@ -99,9 +101,11 @@ namespace opcua_plugin.Domain.Implementations
 
     public class NodeManager : CustomNodeManager2, INotifyPropertyChanged
     {
-        Directory m_nodeInfo;
+        private RemoteVariableStoreAccessor _accessor;
 
-        public List<BaseDataVariableState> DynamicVars;
+        private Dictionary<string, PlcVariableInfo> _variables;
+
+        private List<string> _allNodeIDs;
 
         public CancellationToken CancelToken;
 
@@ -109,7 +113,7 @@ namespace opcua_plugin.Domain.Implementations
         private ServerConfiguration m_configuration;
         #endregion
 
-        public NodeManager(IServerInternal server, ApplicationConfiguration configuration, Directory nodeInfo, CancellationToken cancellationToken)
+        public NodeManager(IServerInternal server, ApplicationConfiguration configuration, RemoteVariableStoreAccessor accessor, CancellationToken cancellationToken)
         :
             base(server, configuration, Namespaces.Empty)
         {
@@ -124,7 +128,7 @@ namespace opcua_plugin.Domain.Implementations
                 m_configuration = new ServerConfiguration();
             }
 
-            m_nodeInfo = nodeInfo;
+            _accessor = accessor;
 
             CancelToken = cancellationToken;
         }
@@ -151,12 +155,46 @@ namespace opcua_plugin.Domain.Implementations
             return GetParentName((node as FolderState)?.Parent) + "/" + node.DisplayName;
         }
 
-        private NodeState CreateNodeTree(IList<IReference> references, Directory node, FolderState parent = null)
+        private void LoadFromAccessor()
         {
-            if(node == null)
+            // TODO: opcua-cs の文字列を上位から渡してもらうようにしたい
+            var infos = _accessor.GetEnabledNodePublishings("opcua-cs");
+            if (infos == null)
             {
-                return null;
+                throw new Exception("Failed to load node tree from accessor.");
             }
+
+            var newVars = new Dictionary<string, PlcVariableInfo>();
+            foreach (var info in infos)
+            {
+                var v = new PlcVariableInfo()
+                {
+                    Name = info.VariableName,
+                    AccessMode = info.AccessMode,
+                    DataTypeString = info.DataType,
+                };
+                (v.ElemType, v.ArraySize, v.IsArray) = ParseArrayType(info.DataType);
+                newVars[info.VariableId] = v;
+            }
+
+            var allIDs = new List<string>();
+            foreach (var varId in newVars.Keys)
+            {
+                var nodeIDs = CollectAllNodeIDs(varId, newVars[varId].DataTypeString, varId);
+                foreach(var nodeID in nodeIDs)
+                {
+                    allIDs.Add(nodeID);
+                }
+            }
+
+            _variables = newVars;
+            _allNodeIDs = allIDs;
+        }
+
+        /*
+        private NodeState CreateNodeTree(IList<IReference> references, FolderState parent = null)
+        {
+
 
             var folderName = node.Name;
             FolderState folder = CreateFolder(parent, folderName, folderName);
@@ -181,6 +219,7 @@ namespace opcua_plugin.Domain.Implementations
 
             return folder;
         }
+        */
 
         public override void CreateAddressSpace(IDictionary<NodeId, IList<IReference>> externalReferences)
         {
@@ -194,9 +233,24 @@ namespace opcua_plugin.Domain.Implementations
                     externalReferences[ObjectIds.ObjectsFolder] = references = new List<IReference>();
                 }
 
-                DynamicVars = new List<BaseDataVariableState>();
+                LoadFromAccessor();
 
-                var root = CreateNodeTree(references, m_nodeInfo);
+                var folderName = "Variables";
+                FolderState folder = CreateFolder(null, folderName, folderName);
+                folder.AddReference(ReferenceTypeIds.Organizes, true, ObjectIds.ObjectsFolder);
+                references.Add(new NodeStateReference(ReferenceTypeIds.Organizes, false, folder.NodeId));
+
+                foreach (var _variable in _variables)
+                {
+                    var variable = _variable.Value;
+                    Console.WriteLine($"Creating variable node: {variable.Name} ({variable.DataType})");
+                    CreateVariable(folder, variable.Name, variable.Name, (uint)variable.DataType);
+                }
+
+                AddPredefinedNode(SystemContext, folder);
+
+                /*
+                var root = CreateNodeTree(references);
 
                 if(root == null)
                 {
@@ -207,6 +261,7 @@ namespace opcua_plugin.Domain.Implementations
                 AddPredefinedNode(SystemContext, root);
 
                 m_simulationTimer = new Timer(DoSimulation, null, 100, 10);
+                */
 
                 /*
                 ReferenceTypeState referenceType = new ReferenceTypeState();
@@ -240,29 +295,6 @@ namespace opcua_plugin.Domain.Implementations
         private void NotifyPropertyChanged([CallerMemberName] String propertyName = "")
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-
-        private void DoSimulation(object state)
-        {
-            if (CancelToken.IsCancellationRequested)
-            {
-                m_simulationTimer?.Dispose();
-                m_simulationTimer = null;
-                return;
-            }
-
-            lock (Lock)
-            {
-                Value++;
-                NotifyPropertyChanged("Value");
-                foreach (var dynamicVar in DynamicVars)
-                {
-                    dynamicVar.Value = Value;
-                    dynamicVar.Timestamp = DateTime.UtcNow;
-                    dynamicVar.ClearChangeMasks(SystemContext, false);
-                }
-                NotifyPropertyChanged("DynamicVars");
-            }
         }
 
         protected override NodeHandle GetManagerHandle(ServerSystemContext context, NodeId nodeId, IDictionary<NodeId, NodeState> cache)
@@ -412,5 +444,112 @@ namespace opcua_plugin.Domain.Implementations
             }
         }
         */
+
+        private (string elemType, int size, bool isArray) ParseArrayType(string dataType)
+        {
+            if (!dataType.StartsWith("ARRAY[") || !dataType.EndsWith("]"))
+            {
+                return ("", 0, false);
+            }
+            var inner = dataType.Substring("ARRAY[".Length, dataType.Length - "ARRAY[".Length - 1);
+            var idx = inner.LastIndexOf(';');
+            if (idx < 0)
+            {
+                return ("", 0, false);
+            }
+            var et = inner.Substring(0, idx).Trim();
+            var sizeStr = inner.Substring(idx + 1).Trim();
+            if (!int.TryParse(sizeStr, out var n) || n <= 0)
+            {
+                return ("", 0, false);
+            }
+            return (et, n, true);
+        }
+
+        /*
+        // collectAllNodeIDs は指定ノード（nodeStr）とその子ノード全ての NodeID 文字列を返す
+        func (ns *PLCNameSpace) collectAllNodeIDs(varID, dataType, nodeStr string) []string {
+            result := []string{nodeStr}
+            elemType, size, isArr := parseArrayType(dataType)
+            if isArr {
+                for i := 0; i < int(size); i++ {
+                    child := fmt.Sprintf("%s[%d]", nodeStr, i)
+                    result = append(result, ns.collectAllNodeIDs(varID, elemType, child)...)
+                }
+                return result
+            }
+            if isStructDataType(dataType) && ns.accessor != nil {
+                for _, f := range ns.accessor.GetStructFields(dataType) {
+                    child := nodeStr + "." + f.Name
+                    result = append(result, ns.collectAllNodeIDs(varID, f.DataType, child)...)
+                }
+            }
+            return result
+        }
+        */
+
+        private List<string> CollectAllNodeIDs(string varID, string dataType, string nodeStr)
+        {
+            var result = new List<string>() { nodeStr };
+            (var elemType, var size, var isArr) = ParseArrayType(dataType);
+            if (isArr)
+            {
+                for (int i = 0; i < size; i++)
+                {
+                    var child = $"{nodeStr}[{i}]";
+                    result.Add(child);
+                }
+                return result;
+            }
+
+            if (IsStructDataType(dataType) && _accessor != null)
+            {
+                var fields = _accessor.GetStructFields(dataType);
+                foreach (var f in fields)
+                {
+                    var child = $"{nodeStr}.{f.Name}";
+                    result.AddRange(CollectAllNodeIDs(varID, f.DataType, child));
+                }
+            }
+            return result;
+        }
+
+        public bool IsStructDataType(string dataType)
+        {
+            if (string.IsNullOrEmpty(dataType))
+            {
+                return false;
+            }
+            var (_, _, isArr) = ParseArrayType(dataType);
+            if (isArr)
+            {
+                return false;
+            }
+            switch (dataType)
+            {
+                case "BOOL":
+                case "SINT":
+                case "INT":
+                case "DINT":
+                case "LINT":
+                case "USINT":
+                case "UINT":
+                case "UDINT":
+                case "ULINT":
+                case "REAL":
+                case "LREAL":
+                case "STRING":
+                case "TIME":
+                case "DATE":
+                case "TIME_OF_DAY":
+                case "DATE_AND_TIME":
+                    return false;
+            }
+            if (dataType.StartsWith("STRING[") && dataType.EndsWith("]"))
+            {
+                return false;
+            }
+            return true;
+        }
     }
 }

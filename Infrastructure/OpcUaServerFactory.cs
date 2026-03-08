@@ -13,6 +13,8 @@ namespace opcua_plugin.Infrastructure
     {
         private PluginConfigDataModel _config;
 
+        private RemoteVariableStoreAccessor _accessor;
+
         public string ProtocolType => _config.ProtocolType;
 
         public string DisplayName => _config.DisplayName;
@@ -73,7 +75,12 @@ namespace opcua_plugin.Infrastructure
         public OpcUaServerManager CreateServer(PluginConfigDataModel config)
         {
             var port = config.Port.Value;
-            return new OpcUaServerManager(port);
+            return new OpcUaServerManager(port, _accessor);
+        }
+
+        public void InjectVariableStore(RemoteVariableStoreAccessor accessor)
+        {
+            _accessor = accessor;
         }
     }
 }

@@ -143,6 +143,12 @@ namespace opcua_plugin.Services
 
             return new Empty();
         }
+
+        public override Task<Empty> Stop(Empty request, ServerCallContext context)
+        {
+            _app.Stop();
+            return Task.FromResult(new Empty());
+        }
     }
 }
     
