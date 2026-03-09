@@ -1,4 +1,5 @@
 {
+  "debug_port": 50051,
   "name": "OPC UA Plugin",
   "entrypoint": "opcua-plugin.exe",
   "version": "0.0.1",

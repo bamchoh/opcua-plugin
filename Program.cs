@@ -5,18 +5,41 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using opcua_plugin.Infrastructure;
 using opcua_plugin.Services;
+using System.Text.Json;
 
 namespace opcua_plugin
 {
+
     internal class Program
     {
+        class PluginConfig
+        {
+            public int? debug_port { get; set; }
+        }
+
+        static int GetGrpcPort()
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "plugin.json");
+
+            if (!File.Exists(path))
+                return 0;
+
+            var json = File.ReadAllText(path);
+
+            var config = JsonSerializer.Deserialize<PluginConfig>(json);
+
+            return config?.debug_port ?? 0;
+        }
+
         static void Main(string[] args)
         {
+            var grpcPort = GetGrpcPort();
+
             var builder = WebApplication.CreateSlimBuilder(args);
 
             builder.WebHost.ConfigureKestrel(options =>
             {
-                options.Listen(System.Net.IPAddress.Loopback, 0, o =>
+                options.Listen(System.Net.IPAddress.Loopback, grpcPort, o =>
                 {
                     o.Protocols = HttpProtocols.Http2;
                 });

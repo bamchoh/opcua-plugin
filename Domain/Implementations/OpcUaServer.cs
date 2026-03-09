@@ -167,28 +167,12 @@ namespace opcua_plugin.Domain.Implementations
             var newVars = new Dictionary<string, PlcVariableInfo>();
             foreach (var info in infos)
             {
-                var v = new PlcVariableInfo()
-                {
-                    Name = info.VariableName,
-                    AccessMode = info.AccessMode,
-                    DataTypeString = info.DataType,
-                };
-                (v.ElemType, v.ArraySize, v.IsArray) = ParseArrayType(info.DataType);
+                var v = new PlcVariableInfo(info);
+                CollectAllNodeIDs(v);
                 newVars[info.VariableId] = v;
             }
 
-            var allIDs = new List<string>();
-            foreach (var varId in newVars.Keys)
-            {
-                var nodeIDs = CollectAllNodeIDs(varId, newVars[varId].DataTypeString, varId);
-                foreach(var nodeID in nodeIDs)
-                {
-                    allIDs.Add(nodeID);
-                }
-            }
-
             _variables = newVars;
-            _allNodeIDs = allIDs;
         }
 
         /*
@@ -243,8 +227,8 @@ namespace opcua_plugin.Domain.Implementations
                 foreach (var _variable in _variables)
                 {
                     var variable = _variable.Value;
-                    Console.WriteLine($"Creating variable node: {variable.Name} ({variable.DataType})");
-                    CreateVariable(folder, variable.Name, variable.Name, (uint)variable.DataType);
+                    Console.WriteLine($"Creating variable node: {_variable.Key} {variable.Name} ({variable.DataType})");
+                    folder.AddChild(CreateVariable(folder, variable));
                 }
 
                 AddPredefinedNode(SystemContext, folder);
@@ -346,32 +330,59 @@ namespace opcua_plugin.Domain.Implementations
             return null;
         }
 
-        private BaseDataVariableState CreateVariable(NodeState parent, string path, string name, NodeId dataType)
+        private BaseDataVariableState CreateVariable(NodeState parent, PlcVariableInfo info)
         {
-            var valueRank = ValueRanks.Scalar;
-
             var variable = new Opc.Ua.BaseDataVariableState(parent);
 
-            variable.SymbolicName = name;
+            NodeId dataType = (uint)info.DataType;
+
+            variable.SymbolicName = info.Name;
             variable.ReferenceTypeId = ReferenceTypes.Organizes;
             variable.TypeDefinitionId = VariableTypeIds.BaseDataVariableType;
-            variable.NodeId = new NodeId(path, NamespaceIndex);
-            variable.BrowseName = new QualifiedName(path, NamespaceIndex);
-            variable.DisplayName = new LocalizedText("en", name);
+            variable.NodeId = new NodeId(info.NodeId, NamespaceIndex);
+            variable.BrowseName = new QualifiedName(info.NodeId, NamespaceIndex);
+            variable.DisplayName = new LocalizedText("en", info.Name);
             variable.WriteMask = AttributeWriteMask.DisplayName | AttributeWriteMask.Description;
             variable.UserWriteMask = AttributeWriteMask.DisplayName | AttributeWriteMask.Description;
             variable.DataType = dataType;
-            variable.ValueRank = valueRank;
-            variable.AccessLevel = AccessLevels.CurrentReadOrWrite;
-            variable.UserAccessLevel = AccessLevels.CurrentReadOrWrite;
+
+            if(info.IsArray)
+            {
+                variable.ValueRank = ValueRanks.OneDimension;
+                variable.ArrayDimensions = new uint[] { (uint)info.ArraySize };
+            }
+            else
+            {
+                variable.ValueRank = ValueRanks.Scalar;
+            }
+
+            switch (info.AccessMode)
+            {
+                case "read":
+                    variable.AccessLevel = AccessLevels.CurrentRead;
+                    variable.UserAccessLevel = AccessLevels.CurrentRead;
+                    break;
+                case "write":
+                    variable.AccessLevel = AccessLevels.CurrentWrite;
+                    variable.UserAccessLevel = AccessLevels.CurrentWrite;
+                    break;
+                case "readwrite":
+                default:
+                    variable.AccessLevel = AccessLevels.CurrentReadOrWrite;
+                    variable.UserAccessLevel = AccessLevels.CurrentReadOrWrite;
+                    break;
+            }
             variable.Historizing = false;
-            variable.Value = Opc.Ua.TypeInfo.GetDefaultValue(dataType, valueRank, Server.TypeTree);
+            variable.Value = Opc.Ua.TypeInfo.GetDefaultValue(dataType, variable.ValueRank, Server.TypeTree);
             variable.StatusCode = StatusCodes.Good;
             variable.Timestamp = DateTime.UtcNow;
 
-            if (parent != null)
+            if(info.Children.Count > 0)
             {
-                parent.AddChild(variable);
+                foreach (var child in info.Children)
+                {
+                    variable.AddChild(CreateVariable(variable, child));
+                }
             }
 
             return variable;
@@ -445,27 +456,6 @@ namespace opcua_plugin.Domain.Implementations
         }
         */
 
-        private (string elemType, int size, bool isArray) ParseArrayType(string dataType)
-        {
-            if (!dataType.StartsWith("ARRAY[") || !dataType.EndsWith("]"))
-            {
-                return ("", 0, false);
-            }
-            var inner = dataType.Substring("ARRAY[".Length, dataType.Length - "ARRAY[".Length - 1);
-            var idx = inner.LastIndexOf(';');
-            if (idx < 0)
-            {
-                return ("", 0, false);
-            }
-            var et = inner.Substring(0, idx).Trim();
-            var sizeStr = inner.Substring(idx + 1).Trim();
-            if (!int.TryParse(sizeStr, out var n) || n <= 0)
-            {
-                return ("", 0, false);
-            }
-            return (et, n, true);
-        }
-
         /*
         // collectAllNodeIDs は指定ノード（nodeStr）とその子ノード全ての NodeID 文字列を返す
         func (ns *PLCNameSpace) collectAllNodeIDs(varID, dataType, nodeStr string) []string {
@@ -488,68 +478,33 @@ namespace opcua_plugin.Domain.Implementations
         }
         */
 
-        private List<string> CollectAllNodeIDs(string varID, string dataType, string nodeStr)
+        private void CollectAllNodeIDs(PlcVariableInfo info, string parentNodePath = "")
         {
-            var result = new List<string>() { nodeStr };
-            (var elemType, var size, var isArr) = ParseArrayType(dataType);
-            if (isArr)
+            var result = new List<PlcVariableInfo>() {};
+            if (info.IsArray)
             {
-                for (int i = 0; i < size; i++)
+                for (int i = 0; i < info.ArraySize; i++)
                 {
-                    var child = $"{nodeStr}[{i}]";
-                    result.Add(child);
+                    var childName = $"[{i+info.LowerBound}]";
+                    var nodeId = $"{info.NodeId}{childName}";
+                    var childInfo = new PlcVariableInfo(childName, nodeId, info.SubArrayType, info.AccessMode);
+                    CollectAllNodeIDs(childInfo, "");
+                    info.Children.Add(childInfo);
                 }
-                return result;
+                return;
             }
 
-            if (IsStructDataType(dataType) && _accessor != null)
+            if (info.IsStruct && _accessor != null)
             {
-                var fields = _accessor.GetStructFields(dataType);
-                foreach (var f in fields)
+                var fields = _accessor.GetStructFields(info.DataTypeString);
+                foreach (StructFieldInfo f in fields)
                 {
-                    var child = $"{nodeStr}.{f.Name}";
-                    result.AddRange(CollectAllNodeIDs(varID, f.DataType, child));
+                    var child = $"{info.NodeId}.{f.Name}";
+                    var childInfo = new PlcVariableInfo(child, f);
+                    CollectAllNodeIDs(childInfo, child);
+                    info.Children.Add(childInfo);
                 }
             }
-            return result;
-        }
-
-        public bool IsStructDataType(string dataType)
-        {
-            if (string.IsNullOrEmpty(dataType))
-            {
-                return false;
-            }
-            var (_, _, isArr) = ParseArrayType(dataType);
-            if (isArr)
-            {
-                return false;
-            }
-            switch (dataType)
-            {
-                case "BOOL":
-                case "SINT":
-                case "INT":
-                case "DINT":
-                case "LINT":
-                case "USINT":
-                case "UINT":
-                case "UDINT":
-                case "ULINT":
-                case "REAL":
-                case "LREAL":
-                case "STRING":
-                case "TIME":
-                case "DATE":
-                case "TIME_OF_DAY":
-                case "DATE_AND_TIME":
-                    return false;
-            }
-            if (dataType.StartsWith("STRING[") && dataType.EndsWith("]"))
-            {
-                return false;
-            }
-            return true;
         }
     }
 }
