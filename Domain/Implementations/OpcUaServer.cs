@@ -530,15 +530,26 @@ namespace opcua_plugin.Domain.Implementations
                 while (await call.ResponseStream.MoveNext(CancelToken))
                 {
                     var change = call.ResponseStream.Current;
-                    if (!_nodeMap.TryGetValue(change.VariableId, out var varInfo)) continue;
+                    if (!_variables.TryGetValue(change.VariableId, out var varInfo)) continue;
 
-                    var nodeId = new NodeId(change.VariableId, NamespaceIndex);
+                    if(!string.IsNullOrEmpty(change.FieldPath))
+                    {
+                        if (!_nodeMap.TryGetValue(varInfo.Name + change.FieldPath, out varInfo)) continue;
+                    }
+
+                    var nodeId = new NodeId(varInfo.NodeId, NamespaceIndex);
                     lock (Lock)
                     {
                         if (!PredefinedNodes.TryGetValue(nodeId, out var nodeState)) continue;
                         if (nodeState is not BaseDataVariableState variable) continue;
 
-                        variable.Value = JsonToOpcUaValue(change.ValueMsgpack.ToByteArray(), varInfo.DataType, varInfo.IsArray, varInfo.ArraySize);
+                        List<ParsedNode> parsedNodes = new List<ParsedNode>();
+                        var ret = MessagePackPathReader.TryGetMsgPackValue(change.ValueMsgpack.ToByteArray(), parsedNodes, varInfo.ElemType, 0, out var val);
+                        if(!ret)
+                        {
+                            continue;
+                        }
+                        variable.Value = val;
                         variable.StatusCode = StatusCodes.Good;
                         variable.Timestamp = DateTime.UtcNow;
                     }
@@ -553,65 +564,6 @@ namespace opcua_plugin.Domain.Implementations
             }
         }
 
-        private static object JsonToOpcUaValue(byte[] bytes, BuiltInType dataType, bool isArray, int arraySize)
-        {
-            if (bytes == null || bytes.Length == 0) return null;
-            try
-            {
-                using var doc = JsonDocument.Parse("");
-                var root = doc.RootElement;
-                if (isArray && root.ValueKind == JsonValueKind.Array)
-                {
-                    var items = root.EnumerateArray().ToArray();
-                    return ConvertJsonArray(items, dataType);
-                }
-                return ConvertJsonElement(root, dataType);
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static object ConvertJsonArray(JsonElement[] items, BuiltInType dataType)
-        {
-            return dataType switch
-            {
-                BuiltInType.Boolean => items.Select(e => e.GetBoolean()).ToArray(),
-                BuiltInType.SByte   => items.Select(e => e.GetSByte()).ToArray(),
-                BuiltInType.Byte    => items.Select(e => e.GetByte()).ToArray(),
-                BuiltInType.Int16   => items.Select(e => e.GetInt16()).ToArray(),
-                BuiltInType.UInt16  => items.Select(e => e.GetUInt16()).ToArray(),
-                BuiltInType.Int32   => items.Select(e => e.GetInt32()).ToArray(),
-                BuiltInType.UInt32  => items.Select(e => e.GetUInt32()).ToArray(),
-                BuiltInType.Int64   => items.Select(e => e.GetInt64()).ToArray(),
-                BuiltInType.UInt64  => items.Select(e => e.GetUInt64()).ToArray(),
-                BuiltInType.Float   => items.Select(e => e.GetSingle()).ToArray(),
-                BuiltInType.Double  => items.Select(e => e.GetDouble()).ToArray(),
-                BuiltInType.String  => items.Select(e => e.GetString()).ToArray(),
-                _                   => null,
-            };
-        }
-
-        private static object ConvertJsonElement(JsonElement element, BuiltInType dataType)
-        {
-            return dataType switch
-            {
-                BuiltInType.Boolean => element.GetBoolean(),
-                BuiltInType.SByte   => element.GetSByte(),
-                BuiltInType.Byte    => element.GetByte(),
-                BuiltInType.Int16   => element.GetInt16(),
-                BuiltInType.UInt16  => element.GetUInt16(),
-                BuiltInType.Int32   => element.GetInt32(),
-                BuiltInType.UInt32  => element.GetUInt32(),
-                BuiltInType.Int64   => element.GetInt64(),
-                BuiltInType.UInt64  => element.GetUInt64(),
-                BuiltInType.Float   => element.GetSingle(),
-                BuiltInType.Double  => element.GetDouble(),
-                BuiltInType.String  => element.GetString(),
-                _                   => null,
-            };
-        }
 
         private FolderState CreateFolder(NodeState parent, string path, string name)
         {

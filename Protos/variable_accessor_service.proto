@@ -17,7 +17,8 @@ service VariableAccessorService {
   rpc ReadVariableValue(ReadVariableValueRequest) returns (ReadVariableValueResponse);
   rpc WriteVariableValue(WriteVariableValueRequest) returns (Empty);
   // WriteVariableField は変数の特定フィールド/要素のみをアトミックに更新する。
-  // field_path は 0ベースのパス文字列 (例: "motor.speed", "items[0]", "items[2].name")
+  // field_path は外部インデックス（表示ベース）のパス文字列
+  // 例: "motor.speed", "items[1]"（ARRAY[1..10] の場合）, "items[2].name"
   rpc WriteVariableField(WriteVariableFieldRequest) returns (Empty);
   rpc GetStructFields(GetStructFieldsRequest) returns (GetStructFieldsResponse);
   // SubscribeVariableChanges: ホストの VariableStore 変更をプラグインに通知する
@@ -79,7 +80,11 @@ message GetStructFieldsResponse {
 }
 
 // VariableChange: ホストの VariableStore 変更通知
+// field_path が空でない場合: value_msgpack はそのフィールド/要素の部分値（差分更新）
+//   field_path は外部インデックス（表示ベース）のパス文字列（例: "motor.speed", "items[1]"）
+// field_path が空の場合: value_msgpack は変数全体の値
 message VariableChange {
   string variable_id = 1;
   bytes value_msgpack = 2;
+  string field_path = 3;
 }
