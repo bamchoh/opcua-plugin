@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build --no-restore)",
+      "Read(//c/Users/bamch/.nuget/**)"
+    ]
+  }
+}

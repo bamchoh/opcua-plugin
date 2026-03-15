@@ -1,4 +1,6 @@
-﻿using Plugin.V1;
+﻿using Google.Protobuf;
+using Grpc.Core;
+using Plugin.V1;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -45,6 +47,27 @@ namespace opcua_plugin.Infrastructure
                 });
             }
             return result;
+        }
+
+        public (byte[] bytes, string error) ReadVariableValue(string variableId)
+        {
+            var resp = _client.ReadVariableValue(new ReadVariableValueRequest { VariableId = variableId });
+            return (resp.ValueMsgpack.ToByteArray(), resp.Error);
+        }
+
+        public void WriteVariableValue(string variableId, byte[] valueBytes)
+        {
+            _client.WriteVariableValue(new WriteVariableValueRequest { VariableId = variableId, ValueMsgpack = ByteString.CopyFrom(valueBytes) });
+        }
+
+        public void WriteVariableField(string variableId, string fieldPath, byte[] valueBytes)
+        {
+            _client.WriteVariableField(new WriteVariableFieldRequest { VariableId = variableId, FieldPath = fieldPath, ValueMsgpack = ByteString.CopyFrom(valueBytes) });
+        }
+
+        public AsyncServerStreamingCall<VariableChange> SubscribeVariableChanges()
+        {
+            return _client.SubscribeVariableChanges(new Empty());
         }
 
         public List<StructFieldInfo> GetStructFields(string dataType)

@@ -9,8 +9,10 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using MessagePack;
 
 namespace opcua_plugin.Domain.Implementations
 {
@@ -105,7 +107,8 @@ namespace opcua_plugin.Domain.Implementations
 
         private Dictionary<string, PlcVariableInfo> _variables;
 
-        private List<string> _allNodeIDs;
+        // NodeId 文字列 → PlcVariableInfo のフラットマップ（配列要素・構造体フィールドを含む）
+        private Dictionary<string, PlcVariableInfo> _nodeMap = new Dictionary<string, PlcVariableInfo>();
 
         public CancellationToken CancelToken;
 
@@ -147,14 +150,6 @@ namespace opcua_plugin.Domain.Implementations
             return node.NodeId;
         }
 
-        private string GetParentName(NodeState node)
-        {
-            if (node == null)
-                return "";
-
-            return GetParentName((node as FolderState)?.Parent) + "/" + node.DisplayName;
-        }
-
         private void LoadFromAccessor()
         {
             // TODO: opcua-cs の文字列を上位から渡してもらうようにしたい
@@ -173,6 +168,18 @@ namespace opcua_plugin.Domain.Implementations
             }
 
             _variables = newVars;
+
+            // フラットマップを再構築
+            _nodeMap.Clear();
+            foreach (var v in newVars.Values)
+                AddToNodeMap(v);
+        }
+
+        private void AddToNodeMap(PlcVariableInfo info)
+        {
+            _nodeMap[info.NodeId] = info;
+            foreach (var child in info.Children)
+                AddToNodeMap(child);
         }
 
         /*
@@ -228,10 +235,20 @@ namespace opcua_plugin.Domain.Implementations
                 {
                     var variable = _variable.Value;
                     Console.WriteLine($"Creating variable node: {_variable.Key} {variable.Name} ({variable.DataType})");
-                    folder.AddChild(CreateVariable(folder, variable));
+                    if(variable.IsStruct && !variable.IsArray)
+                    {
+                        folder.AddChild(CreateStructNode(folder, variable));
+                    }
+                    else
+                    {
+                        folder.AddChild(CreateVariable(folder, variable));
+                    }
                 }
 
                 AddPredefinedNode(SystemContext, folder);
+
+                // ホストの変数変更通知を受信するバックグラウンドタスクを開始
+                _ = Task.Run(() => RunVariableChangeSubscriptionAsync());
 
                 /*
                 var root = CreateNodeTree(references);
@@ -330,6 +347,34 @@ namespace opcua_plugin.Domain.Implementations
             return null;
         }
 
+        private BaseObjectState CreateStructNode(NodeState parent, PlcVariableInfo info)
+        {
+            var objState = new Opc.Ua.BaseObjectState(parent);
+
+            objState.NodeId = new NodeId(info.NodeId, NamespaceIndex);
+            objState.BrowseName = new QualifiedName(info.NodeId, NamespaceIndex);
+            objState.DisplayName = new LocalizedText("en", info.Name);
+            objState.WriteMask = AttributeWriteMask.None;
+            objState.UserWriteMask = AttributeWriteMask.None;
+
+            if (info.Children.Count > 0)
+            {
+                foreach (var child in info.Children)
+                {
+                    if (child.IsStruct && !child.IsArray)
+                    {
+                        objState.AddChild(CreateStructNode(objState, child));
+                    }
+                    else
+                    {
+                        objState.AddChild(CreateVariable(objState, child));
+                    }
+                }
+            }
+
+            return objState;
+        }
+
         private BaseDataVariableState CreateVariable(NodeState parent, PlcVariableInfo info)
         {
             var variable = new Opc.Ua.BaseDataVariableState(parent);
@@ -346,7 +391,7 @@ namespace opcua_plugin.Domain.Implementations
             variable.UserWriteMask = AttributeWriteMask.DisplayName | AttributeWriteMask.Description;
             variable.DataType = dataType;
 
-            if(info.IsArray)
+            if (info.IsArray)
             {
                 variable.ValueRank = ValueRanks.OneDimension;
                 variable.ArrayDimensions = new uint[] { (uint)info.ArraySize };
@@ -377,15 +422,195 @@ namespace opcua_plugin.Domain.Implementations
             variable.StatusCode = StatusCodes.Good;
             variable.Timestamp = DateTime.UtcNow;
 
+            // 読み取りコールバックを設定
+            variable.OnReadValue = OnReadVariable;
+
             if(info.Children.Count > 0)
             {
                 foreach (var child in info.Children)
                 {
-                    variable.AddChild(CreateVariable(variable, child));
+                    if(child.IsStruct)
+                    {
+                        variable.AddChild(CreateStructNode(variable, child));
+                    }
+                    else
+                    {
+                        variable.AddChild(CreateVariable(variable, child));
+                    }
                 }
             }
 
             return variable;
+        }
+
+        private ServiceResult OnReadVariable(
+            ISystemContext context,
+            NodeState node,
+            NumericRange indexRange,
+            QualifiedName dataEncoding,
+            ref object value,
+            ref StatusCode statusCode,
+            ref DateTime timestamp)
+        {
+            if (_accessor == null) return ServiceResult.Good;
+
+            var nodeIdStr = node.NodeId.Identifier as string;
+            if (nodeIdStr == null) return ServiceResult.Good;
+
+            if (!_nodeMap.TryGetValue(nodeIdStr, out var varInfo))
+            {
+                statusCode = StatusCodes.BadNodeIdUnknown;
+                return new ServiceResult(StatusCodes.BadNodeIdUnknown);
+            }
+
+            var (valueMessagePack, error) = _accessor.ReadVariableValue(varInfo.VariableId);
+            if (!string.IsNullOrEmpty(error))
+            {
+                statusCode = StatusCodes.BadInternalError;
+                return new ServiceResult(StatusCodes.BadInternalError);
+            }
+
+            List<ParsedNode> parsedNodes = new List<ParsedNode>();
+            MessagePackPathReader.ParseNodeIdentifier(nodeIdStr, ref parsedNodes);
+            int lowerBound = 0;
+            if(varInfo.Parent != null)
+            {
+                lowerBound = varInfo.Parent.LowerBound;
+            }
+            MessagePackPathReader.TryGetMsgPackValue(valueMessagePack, parsedNodes, varInfo.ElemType, lowerBound, out var val);
+            value = val;
+
+            statusCode = StatusCodes.Good;
+            timestamp = DateTime.UtcNow;
+            return ServiceResult.Good;
+        }
+
+        public override void Write(
+            OperationContext context,
+            IList<WriteValue> nodesToWrite,
+            IList<ServiceResult> errors)
+        {
+            // 基底クラスがノードの値をメモリ上に反映する
+            base.Write(context, nodesToWrite, errors);
+
+            if (_accessor == null) return;
+
+            for (int i = 0; i < nodesToWrite.Count; i++)
+            {
+                if (ServiceResult.IsBad(errors[i])) continue;
+
+                var nodeIdStr = nodesToWrite[i].NodeId.Identifier as string;
+                if (nodeIdStr == null) continue;
+
+                var rawValue = nodesToWrite[i].Value?.Value;
+                var valueMsgpack = MessagePackSerializer.Serialize(rawValue);
+
+                if (_nodeMap.TryGetValue(nodeIdStr, out var varInfo))
+                {
+                    var idx = -1;
+                    var delimiters = new[] { '[', '.' };
+                    if ((idx = nodeIdStr.IndexOfAny(delimiters)) >= 0)
+                    {
+                        _accessor.WriteVariableField(varInfo.VariableId, nodeIdStr.Substring(idx), valueMsgpack);
+                    }
+                    else
+                    {
+                        _accessor.WriteVariableValue(varInfo.VariableId, valueMsgpack);
+                    }
+                }
+            }
+        }
+
+        private async Task RunVariableChangeSubscriptionAsync()
+        {
+            if (_accessor == null) return;
+            try
+            {
+                using var call = _accessor.SubscribeVariableChanges();
+                while (await call.ResponseStream.MoveNext(CancelToken))
+                {
+                    var change = call.ResponseStream.Current;
+                    if (!_nodeMap.TryGetValue(change.VariableId, out var varInfo)) continue;
+
+                    var nodeId = new NodeId(change.VariableId, NamespaceIndex);
+                    lock (Lock)
+                    {
+                        if (!PredefinedNodes.TryGetValue(nodeId, out var nodeState)) continue;
+                        if (nodeState is not BaseDataVariableState variable) continue;
+
+                        variable.Value = JsonToOpcUaValue(change.ValueMsgpack.ToByteArray(), varInfo.DataType, varInfo.IsArray, varInfo.ArraySize);
+                        variable.StatusCode = StatusCodes.Good;
+                        variable.Timestamp = DateTime.UtcNow;
+                    }
+                    // ロック外で変更マスクをクリアして購読クライアントに通知
+                    PredefinedNodes[nodeId].ClearChangeMasks(SystemContext, false);
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"SubscribeVariableChanges error: {ex.Message}");
+            }
+        }
+
+        private static object JsonToOpcUaValue(byte[] bytes, BuiltInType dataType, bool isArray, int arraySize)
+        {
+            if (bytes == null || bytes.Length == 0) return null;
+            try
+            {
+                using var doc = JsonDocument.Parse("");
+                var root = doc.RootElement;
+                if (isArray && root.ValueKind == JsonValueKind.Array)
+                {
+                    var items = root.EnumerateArray().ToArray();
+                    return ConvertJsonArray(items, dataType);
+                }
+                return ConvertJsonElement(root, dataType);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static object ConvertJsonArray(JsonElement[] items, BuiltInType dataType)
+        {
+            return dataType switch
+            {
+                BuiltInType.Boolean => items.Select(e => e.GetBoolean()).ToArray(),
+                BuiltInType.SByte   => items.Select(e => e.GetSByte()).ToArray(),
+                BuiltInType.Byte    => items.Select(e => e.GetByte()).ToArray(),
+                BuiltInType.Int16   => items.Select(e => e.GetInt16()).ToArray(),
+                BuiltInType.UInt16  => items.Select(e => e.GetUInt16()).ToArray(),
+                BuiltInType.Int32   => items.Select(e => e.GetInt32()).ToArray(),
+                BuiltInType.UInt32  => items.Select(e => e.GetUInt32()).ToArray(),
+                BuiltInType.Int64   => items.Select(e => e.GetInt64()).ToArray(),
+                BuiltInType.UInt64  => items.Select(e => e.GetUInt64()).ToArray(),
+                BuiltInType.Float   => items.Select(e => e.GetSingle()).ToArray(),
+                BuiltInType.Double  => items.Select(e => e.GetDouble()).ToArray(),
+                BuiltInType.String  => items.Select(e => e.GetString()).ToArray(),
+                _                   => null,
+            };
+        }
+
+        private static object ConvertJsonElement(JsonElement element, BuiltInType dataType)
+        {
+            return dataType switch
+            {
+                BuiltInType.Boolean => element.GetBoolean(),
+                BuiltInType.SByte   => element.GetSByte(),
+                BuiltInType.Byte    => element.GetByte(),
+                BuiltInType.Int16   => element.GetInt16(),
+                BuiltInType.UInt16  => element.GetUInt16(),
+                BuiltInType.Int32   => element.GetInt32(),
+                BuiltInType.UInt32  => element.GetUInt32(),
+                BuiltInType.Int64   => element.GetInt64(),
+                BuiltInType.UInt64  => element.GetUInt64(),
+                BuiltInType.Float   => element.GetSingle(),
+                BuiltInType.Double  => element.GetDouble(),
+                BuiltInType.String  => element.GetString(),
+                _                   => null,
+            };
         }
 
         private FolderState CreateFolder(NodeState parent, string path, string name)
@@ -487,7 +712,7 @@ namespace opcua_plugin.Domain.Implementations
                 {
                     var childName = $"[{i+info.LowerBound}]";
                     var nodeId = $"{info.NodeId}{childName}";
-                    var childInfo = new PlcVariableInfo(childName, nodeId, info.SubArrayType, info.AccessMode);
+                    var childInfo = new PlcVariableInfo(childName, nodeId, info);
                     CollectAllNodeIDs(childInfo, "");
                     info.Children.Add(childInfo);
                 }
@@ -500,7 +725,7 @@ namespace opcua_plugin.Domain.Implementations
                 foreach (StructFieldInfo f in fields)
                 {
                     var child = $"{info.NodeId}.{f.Name}";
-                    var childInfo = new PlcVariableInfo(child, f);
+                    var childInfo = new PlcVariableInfo(child, f, info);
                     CollectAllNodeIDs(childInfo, child);
                     info.Children.Add(childInfo);
                 }

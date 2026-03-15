@@ -13,9 +13,12 @@ import "common.proto";
 // VariableAccessorService: ホストの VariableStore への変数アクセス
 service VariableAccessorService {
   rpc GetEnabledNodePublishings(GetNodePublishingsRequest) returns (GetNodePublishingsResponse);
-  // value_json には変数値を JSON シリアライズした文字列を使用する
+  // value_msgpack には変数値を MessagePack シリアライズしたバイト列を使用する（uint64 精度を保持）
   rpc ReadVariableValue(ReadVariableValueRequest) returns (ReadVariableValueResponse);
   rpc WriteVariableValue(WriteVariableValueRequest) returns (Empty);
+  // WriteVariableField は変数の特定フィールド/要素のみをアトミックに更新する。
+  // field_path は 0ベースのパス文字列 (例: "motor.speed", "items[0]", "items[2].name")
+  rpc WriteVariableField(WriteVariableFieldRequest) returns (Empty);
   rpc GetStructFields(GetStructFieldsRequest) returns (GetStructFieldsResponse);
   // SubscribeVariableChanges: ホストの VariableStore 変更をプラグインに通知する
   // OPC UA サブスクリプション更新等に使用する
@@ -46,14 +49,20 @@ message ReadVariableValueRequest {
 }
 
 message ReadVariableValueResponse {
-  // 変数値を JSON シリアライズした文字列
-  string value_json = 1;
+  // 変数値を MessagePack シリアライズしたバイト列
+  bytes value_msgpack = 1;
   string error = 2; // 空文字列ならエラーなし
 }
 
 message WriteVariableValueRequest {
   string variable_id = 1;
-  string value_json = 2;
+  bytes value_msgpack = 2;
+}
+
+message WriteVariableFieldRequest {
+  string variable_id = 1;
+  string field_path = 2;
+  bytes value_msgpack = 3;
 }
 
 message GetStructFieldsRequest {
@@ -72,5 +81,5 @@ message GetStructFieldsResponse {
 // VariableChange: ホストの VariableStore 変更通知
 message VariableChange {
   string variable_id = 1;
-  string value_json = 2;
+  bytes value_msgpack = 2;
 }

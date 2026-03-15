@@ -1,4 +1,5 @@
-﻿using Opc.Ua;
+﻿using MessagePack.Formatters;
+using Opc.Ua;
 using opcua_plugin.Infrastructure;
 using System;
 using System.Collections.Generic;
@@ -10,16 +11,21 @@ namespace opcua_plugin.Domain.Implementations
 {
     public class PlcVariableInfo
     {
+        public string VariableId { get; set; }
         public string NodeId { get; set; }
 		public string Name { get; set; }
 		public string AccessMode { get; set; } // "read" | "write" | "readwrite"
+
+        private BuiltInType _datatype;
 		public BuiltInType DataType
         {
             get
             {
                 try
                 {
-                    return ConvertType(DataTypeString);
+                    if(_datatype == BuiltInType.Null)
+                        _datatype = ConvertType(DataTypeString);
+                    return _datatype;
                 }
                 catch
                 {
@@ -44,6 +50,8 @@ namespace opcua_plugin.Domain.Implementations
         public string DataTypeString { get; }
 
         public List<PlcVariableInfo> Children { get; set; } = new List<PlcVariableInfo>();
+
+        public PlcVariableInfo? Parent { get; set; } = null;
 
         private static BuiltInType ConvertType(string type)
         {
@@ -126,26 +134,31 @@ namespace opcua_plugin.Domain.Implementations
         {
             Name = info.VariableName;
             NodeId = info.VariableName;
+            VariableId = info.VariableId;
             AccessMode = info.AccessMode;
             DataTypeString = info.DataType;
             (ElemType, SubArrayType, LowerBound, ArraySize, IsArray) = ParseArrayType(info.DataType);
         }
 
-        public PlcVariableInfo(string name, string nodeid, string dataType, string accessMode)
+        public PlcVariableInfo(string name, string nodeid, PlcVariableInfo parent)
         {
             Name = name;
             NodeId = nodeid;
-            AccessMode = accessMode;
-            DataTypeString = dataType;
-            (ElemType, SubArrayType, LowerBound, ArraySize, IsArray) = ParseArrayType(dataType);
+            VariableId = parent.VariableId;
+            AccessMode = parent.AccessMode;
+            DataTypeString = parent.SubArrayType;
+            Parent = parent;
+            (ElemType, SubArrayType, LowerBound, ArraySize, IsArray) = ParseArrayType(DataTypeString);
         }
 
-        public PlcVariableInfo(string nodeid, StructFieldInfo info)
+        public PlcVariableInfo(string nodeid, StructFieldInfo info, PlcVariableInfo parent)
         {
             Name = info.Name;
             NodeId = nodeid;
-            AccessMode = "readwrite"; // 構造体のフィールドは通常両方アクセス可能とする
+            VariableId = parent.VariableId;
+            AccessMode = parent.AccessMode;
             DataTypeString = info.DataType;
+            Parent = parent;
             (ElemType, SubArrayType, LowerBound, ArraySize, IsArray) = ParseArrayType(info.DataType);
         }
     }
