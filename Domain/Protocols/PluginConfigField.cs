@@ -51,5 +51,8 @@ namespace opcua_plugin.Domain.Protocols
 
         [JsonPropertyName("condition")]
         public FieldCondition? Condition { get; set; }
+
+        [JsonPropertyName("description")]
+        public string Description { get; set; } = "";
     }
 }

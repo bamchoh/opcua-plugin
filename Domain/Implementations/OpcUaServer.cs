@@ -24,6 +24,14 @@ namespace opcua_plugin.Domain.Implementations
 
         public RemoteVariableStoreAccessor Accessor;
 
+        public void OnNodePublishingUpdated()
+        {
+            if (NodeManager != null)
+            {
+                NodeManager.OnNodePublishingUpdated();
+            }
+        }
+
         protected override MasterNodeManager CreateMasterNodeManager(IServerInternal server, ApplicationConfiguration configuration)
         {
             List<INodeManager> nodeManagers = new List<INodeManager>();
@@ -148,6 +156,13 @@ namespace opcua_plugin.Domain.Implementations
         {
             // generate a new numeric id in the instance namespace.
             return node.NodeId;
+        }
+
+        public void OnNodePublishingUpdated()
+        {
+            DeleteAddressSpace();
+            var externalReferences = new Dictionary<NodeId, IList<IReference>>();
+            CreateAddressSpace(externalReferences);
         }
 
         private void LoadFromAccessor()

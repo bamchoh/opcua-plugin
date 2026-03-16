@@ -47,14 +47,14 @@ namespace opcua_plugin.Infrastructure
             return _factory.GetConfig();
         }
 
-        public PluginConfigDataModel UpdateConfig(PluginConfigDataModel config)
-        {
-            return _factory.UpdateConfig(config);
-        }
-
         public List<ConfigFieldModel> GetConfigFields(string variantId)
         {
             return _factory.GetConfigFields();
+        }
+
+        public PluginConfigDataModel UpdateConfig(PluginConfigDataModel config)
+        {
+            return _factory.UpdateConfig(config);
         }
 
         public async Task CreateAndStartAsync(CreateAndStartCommand cmd)
@@ -115,6 +115,11 @@ namespace opcua_plugin.Infrastructure
                 return ServerStatus.Stopped.ToString();
             }
             return _server.Status.ToString();
+        }
+
+        public void OnNodePublishingUpdated()
+        {
+            _server.OnNodePublishingUpdated();
         }
     }
 }

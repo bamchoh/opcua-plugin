@@ -1,4 +1,5 @@
-﻿using Grpc.Core;
+﻿using Google.Protobuf.Reflection;
+using Grpc.Core;
 using opcua_plugin.Infrastructure;
 using Plugin.V1;
 using System;
@@ -58,30 +59,20 @@ namespace opcua_plugin.Services
             });
         }
 
-        public override Task<ConfigDataResponse> GetDefaultConfig(GetDefaultConfigRequest request, ServerCallContext context)
-        {
-            var config = _app.GetDefaultConfig(request.VariantId);
-
-            return Task.FromResult(new ConfigDataResponse
-            {
-                VariantId = request.VariantId,
-                SettingsJson = JsonSerializer.Serialize(config),
-            });
-        }
-
         public override Task<GetConfigFieldsResponse> GetConfigFields(GetConfigFieldsRequest request, ServerCallContext context)
         {
             var configFields = _app.GetConfigFields(request.VariantId);
 
             var configFieldsResponse = new GetConfigFieldsResponse();
 
-            foreach(var field in configFields)
+            foreach (var field in configFields)
             {
                 configFieldsResponse.Fields.Add(new ConfigField
                 {
                     Name = field.Name,
                     Label = field.Label,
                     Type = field.Type,
+                    Description = field.Description,
                     Required = field.Required,
                     DefaultJson = JsonSerializer.Serialize(field.Default),
                     HasMin = field.Min == null,
@@ -92,6 +83,17 @@ namespace opcua_plugin.Services
             }
 
             return Task.FromResult(configFieldsResponse);
+        }
+
+        public override Task<ConfigDataResponse> GetDefaultConfig(GetDefaultConfigRequest request, ServerCallContext context)
+        {
+            var config = _app.GetDefaultConfig(request.VariantId);
+
+            return Task.FromResult(new ConfigDataResponse
+            {
+                VariantId = request.VariantId,
+                SettingsJson = JsonSerializer.Serialize(config),
+            });
         }
 
         public override Task<ConfigToMapResponse> ConfigToMap(ConfigToMapRequest request, ServerCallContext context)
@@ -147,6 +149,12 @@ namespace opcua_plugin.Services
         public override Task<Empty> Stop(Empty request, ServerCallContext context)
         {
             _app.Stop();
+            return Task.FromResult(new Empty());
+        }
+
+        public override Task<Empty> OnNodePublishingUpdated(Empty request, ServerCallContext context)
+        {
+            _app.OnNodePublishingUpdated();
             return Task.FromResult(new Empty());
         }
     }

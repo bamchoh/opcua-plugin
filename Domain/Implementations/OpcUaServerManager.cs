@@ -22,6 +22,8 @@ namespace opcua_plugin.Domain.Implementations
 
         private Opc.Ua.Configuration.ApplicationInstance _application;
 
+        private OpcUaProtocolServer _server;
+
         public ServerStatus Status { get; private set; } = ServerStatus.Stopped;
 
         public OpcUaServerManager(int port, RemoteVariableStoreAccessor accessor)
@@ -42,13 +44,13 @@ namespace opcua_plugin.Domain.Implementations
                 ba.Add(Endpoint);
             }
 
-            var server = new OpcUaProtocolServer()
+            _server = new OpcUaProtocolServer()
             {
                 CancelToken = cancelToken,
                 Accessor = _accessor
             };
 
-            var task = _application.StartAsync(server);
+            var task = _application.StartAsync(_server);
 
             Status = ServerStatus.Running;
 
@@ -63,6 +65,15 @@ namespace opcua_plugin.Domain.Implementations
             }
 
             Status = ServerStatus.Stopped;
+        }
+
+        public void OnNodePublishingUpdated()
+        {
+            if (_server == null || Status != ServerStatus.Running)
+            {
+                return;
+            }
+            _server.OnNodePublishingUpdated();
         }
     }
 }
