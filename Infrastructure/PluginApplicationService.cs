@@ -19,6 +19,8 @@ namespace opcua_plugin.Infrastructure
 
         private OpcUaServerManager _server;
 
+        private GrpcChannel _channel;
+
         public PluginApplicationService(OpcUaServerFactory factory)
         {
             Console.WriteLine("PluginApplicationService created");
@@ -62,8 +64,8 @@ namespace opcua_plugin.Infrastructure
             if (!string.IsNullOrEmpty(cmd.HostGrpcAddr))
             {
                 Console.WriteLine($"Creating gRPC channel to {cmd.HostGrpcAddr}");
-                var channel = GrpcChannel.ForAddress(string.Format("http://{0}", cmd.HostGrpcAddr));
-                var client = new VariableAccessorService.VariableAccessorServiceClient(channel);
+                _channel = GrpcChannel.ForAddress(string.Format("http://{0}", cmd.HostGrpcAddr));
+                var client = new VariableAccessorService.VariableAccessorServiceClient(_channel);
                 var accessor = new RemoteVariableStoreAccessor(client);
                 _factory.InjectVariableStore(accessor);
             }
@@ -100,12 +102,11 @@ namespace opcua_plugin.Infrastructure
 
         public void Stop()
         {
-            if(_server == null)
-            {
-                return;
-            }
+            if(_server != null)
+                _server.Stop();
 
-            _server.Stop();
+            if (_channel != null)
+                _channel.Dispose();
         }
 
         public string GetStatus()
