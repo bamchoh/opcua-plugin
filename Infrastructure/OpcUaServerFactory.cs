@@ -54,14 +54,6 @@ namespace opcua_plugin.Infrastructure
 
             return new List<ConfigFieldModel> {
                 new ConfigFieldModel {
-                    Name = "host",
-                    Label = "ホスト",
-                    Description = "待ち受けるネットワークアドレス。0.0.0.0 で全インターフェースに対応します。",
-                    Type = "text",
-                    Required = true,
-                    Default = defaultConfig.Host,
-                },
-                new ConfigFieldModel {
                     Name = "port",
                     Label = "ポート",
                     Description = "OPC UA サーバーの待ち受けポート番号。標準ポートは 4840 です。",
