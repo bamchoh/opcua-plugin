@@ -62,14 +62,21 @@ namespace opcua_plugin.Infrastructure
                     Default = defaultConfig.Port.Value,
                     Min = defaultConfig.Port.MinValue,
                     Max = defaultConfig.Port.MaxValue,
+                },
+                new ConfigFieldModel {
+                    Name = "application_name",
+                    Label = "アプリケーション名",
+                    Description = "OPC UA サーバーで公開されるアプリケーションの名称",
+                    Type = "text",
+                    Required = true,
+                    Default = defaultConfig.ApplicationName,
                 }
             };
         }
 
-        public OpcUaServerManager CreateServer(PluginConfigDataModel config)
+        public OpcUaServerManager CreateServer()
         {
-            var port = config.Port.Value;
-            return new OpcUaServerManager(port, _accessor);
+            return new OpcUaServerManager(_accessor);
         }
 
         public void InjectVariableStore(RemoteVariableStoreAccessor accessor)

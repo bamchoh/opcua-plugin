@@ -12,13 +12,7 @@ namespace opcua_plugin.Domain.Implementations
 {
     public class OpcUaServerManager
     {
-        private int portno;
-
-        private string hostname;
-
         private RemoteVariableStoreAccessor _accessor;
-
-        public string Endpoint => string.Format("opc.tcp://{0}:{1}", hostname, portno);
 
         private Opc.Ua.Configuration.ApplicationInstance _application;
 
@@ -26,22 +20,22 @@ namespace opcua_plugin.Domain.Implementations
 
         public ServerStatus Status { get; private set; } = ServerStatus.Stopped;
 
-        public OpcUaServerManager(int port, RemoteVariableStoreAccessor accessor)
+        public OpcUaServerManager(RemoteVariableStoreAccessor accessor)
         {
-            this.portno = port;
-
-            this.hostname = System.Net.Dns.GetHostName();
-
             this._accessor = accessor;
         }
 
-        public Task StartAsync(CancellationToken cancelToken)
+        public Task StartAsync(CancellationToken cancelToken, int portno, string appName)
         {
             _application = OpcUaApplication.GetApplicationInstance();
-            _application.ApplicationConfiguration.ApplicationName = "SimpleOpcUaServer";
+            _application.ApplicationConfiguration.ApplicationName = appName;
             {
                 var ba = _application.ApplicationConfiguration.ServerConfiguration.BaseAddresses;
-                ba.Add(Endpoint);
+
+                var hostname = System.Net.Dns.GetHostName();
+                var endpoint = string.Format("opc.tcp://{0}:{1}", hostname, portno);
+
+                ba.Add(endpoint);
             }
 
             _server = new OpcUaProtocolServer()

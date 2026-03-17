@@ -73,7 +73,7 @@ namespace opcua_plugin.Infrastructure
             PluginConfigDataModel config;
 
             // 設定の復元
-            if (!string.IsNullOrEmpty(cmd.SettingsJson))
+            if (string.IsNullOrEmpty(cmd.SettingsJson))
             {
                 config = _factory.GetDefaultConfig();
             }
@@ -92,12 +92,12 @@ namespace opcua_plugin.Infrastructure
 
             // var dataStore = _factory.CreateDataStore();
 
-            var server = _factory.CreateServer(config);
+            var server = _factory.CreateServer();
 
             _server = server;
 
             var cts = new CancellationTokenSource();
-            await server.StartAsync(cts.Token);
+            await server.StartAsync(cts.Token, config.Port.Value, config.ApplicationName);
         }
 
         public void Stop()

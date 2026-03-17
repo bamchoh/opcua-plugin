@@ -43,6 +43,9 @@ namespace opcua_plugin.Domain.Protocols
     {
         public static readonly PluginConfigDataModel Default = new PluginConfigDataModel();
 
+        [JsonPropertyName("application_name")]
+        public string ApplicationName { get; init; }
+
         [JsonPropertyName("port")]
         public PortValueObject Port { get; init; }
 
@@ -50,6 +53,7 @@ namespace opcua_plugin.Domain.Protocols
         public string DisplayName => "OPC UA";
 
         public PluginConfigDataModel() {
+            ApplicationName = "SimpleOpcUaServer";
             Port = new PortValueObject(4840);
         }
     }
