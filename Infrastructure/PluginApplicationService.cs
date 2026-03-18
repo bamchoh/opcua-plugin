@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Text.Json;
 using opcua_plugin.Domain.Implementations;
+using opcua_plugin.Domain.Configuration;
 
 namespace opcua_plugin.Infrastructure
 {
@@ -73,11 +74,7 @@ namespace opcua_plugin.Infrastructure
             PluginConfigDataModel config;
 
             // 設定の復元
-            if (string.IsNullOrEmpty(cmd.SettingsJson))
-            {
-                config = _factory.GetDefaultConfig();
-            }
-            else
+            if (!string.IsNullOrEmpty(cmd.SettingsJson))
             {
                 var _config = JsonSerializer.Deserialize<PluginConfigDataModel>(cmd.SettingsJson);
 
@@ -87,7 +84,7 @@ namespace opcua_plugin.Infrastructure
                         new Status(StatusCode.InvalidArgument, "Invalid SettingsJson"));
                 }
 
-                config = _factory.UpdateConfig(_config);
+                _factory.UpdateConfig(_config);
             }
 
             // var dataStore = _factory.CreateDataStore();
@@ -97,7 +94,7 @@ namespace opcua_plugin.Infrastructure
             _server = server;
 
             var cts = new CancellationTokenSource();
-            await server.StartAsync(cts.Token, config.Port.Value, config.ApplicationName);
+            await server.StartAsync(cts.Token, _factory.Options);
         }
 
         public void Stop()

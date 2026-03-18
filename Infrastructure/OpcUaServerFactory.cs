@@ -1,4 +1,6 @@
-﻿using opcua_plugin.Domain.Implementations;
+﻿using Microsoft.Extensions.Options;
+using opcua_plugin.Domain.Configuration;
+using opcua_plugin.Domain.Implementations;
 using opcua_plugin.Domain.Protocols;
 using Plugin.V1;
 using System;
@@ -11,17 +13,19 @@ namespace opcua_plugin.Infrastructure
 {
     public class OpcUaServerFactory
     {
-        private PluginConfigDataModel _config;
-
         private RemoteVariableStoreAccessor _accessor;
 
-        public string ProtocolType => _config.ProtocolType;
+        private OpcUaServerOptions _options;
 
-        public string DisplayName => _config.DisplayName;
+        public OpcUaServerOptions Options { get { return _options; } }
 
-        public OpcUaServerFactory()
+        public string ProtocolType => "opcua";
+
+        public string DisplayName => "OPC UA";
+
+        public OpcUaServerFactory(OpcUaServerOptions options)
         {
-            _config = PluginConfigDataModel.Default;
+            _options = options;
         }
 
         public ProtocolCapabilitiesModel GetProtocolCapabilities()
@@ -32,46 +36,58 @@ namespace opcua_plugin.Infrastructure
             };
         }
 
+        public PluginConfigDataModel UpdateConfig(PluginConfigDataModel config)
+        {
+            var newOptions = MapFromPluginConfig(config);
+            _options.ApplicationName = config.ApplicationName;
+
+            _options.Port = new PortValueObject(config.Port);
+
+            _options.ManufacturerName = config.ManufacturerName;
+
+            return config;
+        }
+
+        private OpcUaServerOptions MapFromPluginConfig(PluginConfigDataModel cfg)
+        {
+            var opts = new OpcUaServerOptions
+            {
+                ApplicationName = cfg.ApplicationName,
+                Port = new PortValueObject(cfg.Port),
+                ManufacturerName = cfg.ManufacturerName,
+                ProductUri = cfg.ProductUri,
+                Namespace = cfg.Namespace,
+            };
+
+            return opts;
+        }
+
+        private PluginConfigDataModel ToPluginConfigModel(OpcUaServerOptions options)
+        {
+            return new PluginConfigDataModel()
+            {
+                ApplicationName = options.ApplicationName,
+                Port = options.Port.Value,
+                ManufacturerName = options.ManufacturerName,
+                ProductUri = options.ProductUri,
+                Namespace = options.Namespace,
+            };
+        }
+
         public PluginConfigDataModel GetDefaultConfig()
         {
-            return PluginConfigDataModel.Default;
+            return ToPluginConfigModel(OpcUaServerOptions.Default);
         }
 
         public PluginConfigDataModel GetConfig()
         {
-            return _config;
+            return ToPluginConfigModel(_options);
         }
 
-        public PluginConfigDataModel UpdateConfig(PluginConfigDataModel config)
-        {
-            _config = config;
-            return _config;
-        }
 
         public List<ConfigFieldModel> GetConfigFields()
         {
-            var defaultConfig = GetDefaultConfig();
-
-            return new List<ConfigFieldModel> {
-                new ConfigFieldModel {
-                    Name = "port",
-                    Label = "ポート",
-                    Description = "OPC UA サーバーの待ち受けポート番号。標準ポートは 4840 です。",
-                    Type = "number",
-                    Required = true,
-                    Default = defaultConfig.Port.Value,
-                    Min = defaultConfig.Port.MinValue,
-                    Max = defaultConfig.Port.MaxValue,
-                },
-                new ConfigFieldModel {
-                    Name = "application_name",
-                    Label = "アプリケーション名",
-                    Description = "OPC UA サーバーで公開されるアプリケーションの名称",
-                    Type = "text",
-                    Required = true,
-                    Default = defaultConfig.ApplicationName,
-                }
-            };
+            return OpcUaConfigSchema.GetFields(_options).ToList();
         }
 
         public OpcUaServerManager CreateServer()

@@ -1,6 +1,9 @@
-﻿using Microsoft.AspNetCore.Hosting.Server;
+﻿using MessagePack;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.Extensions.Options;
 using Opc.Ua;
 using Opc.Ua.Server;
+using opcua_plugin.Domain.Configuration;
 using opcua_plugin.Infrastructure;
 using System;
 using System.Collections.Generic;
@@ -12,7 +15,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Xml.Linq;
-using MessagePack;
 
 namespace opcua_plugin.Domain.Implementations
 {
@@ -23,6 +25,15 @@ namespace opcua_plugin.Domain.Implementations
         public CancellationToken CancelToken;
 
         public RemoteVariableStoreAccessor Accessor;
+
+        public OpcUaServerOptions Options { get; }
+
+        public OpcUaProtocolServer(OpcUaServerOptions options, RemoteVariableStoreAccessor accessor, CancellationToken cancelToken)
+        {
+            Options = options ?? new OpcUaServerOptions();
+            Accessor = accessor;
+            CancelToken = cancelToken;
+        }
 
         public void OnNodePublishingUpdated()
         {
@@ -37,7 +48,7 @@ namespace opcua_plugin.Domain.Implementations
             List<INodeManager> nodeManagers = new List<INodeManager>();
 
             // create the custom node managers.
-            NodeManager = new NodeManager(server, configuration, Accessor, CancelToken);
+            NodeManager = new NodeManager(server, configuration, Accessor, CancelToken, Options);
             nodeManagers.Add(NodeManager);
 
             // create master node manager.
@@ -48,9 +59,9 @@ namespace opcua_plugin.Domain.Implementations
         {
             ServerProperties properties = new ServerProperties();
 
-            properties.ManufacturerName = "bamchoh";
-            properties.ProductName = "Opc Ua Server";
-            properties.ProductUri = "http://bamchoh.net/OpcUaServer/v1.0";
+            properties.ManufacturerName = Options.ManufacturerName;
+            properties.ProductName = Options.ProductName;
+            properties.ProductUri = Options.ProductUri;
             properties.SoftwareVersion = Utils.GetAssemblySoftwareVersion();
             properties.BuildNumber = Utils.GetAssemblyBuildNumber();
             properties.BuildDate = Utils.GetAssemblyTimestamp();
@@ -122,9 +133,10 @@ namespace opcua_plugin.Domain.Implementations
 
         #region Private Fields
         private ServerConfiguration m_configuration;
+        private OpcUaServerOptions _options;
         #endregion
 
-        public NodeManager(IServerInternal server, ApplicationConfiguration configuration, RemoteVariableStoreAccessor accessor, CancellationToken cancellationToken)
+        public NodeManager(IServerInternal server, ApplicationConfiguration configuration, RemoteVariableStoreAccessor accessor, CancellationToken cancellationToken, OpcUaServerOptions options)
         :
             base(server, configuration, Namespaces.Empty)
         {
@@ -142,6 +154,8 @@ namespace opcua_plugin.Domain.Implementations
             _accessor = accessor;
 
             CancelToken = cancellationToken;
+
+            _options = options;
         }
 
         protected override void Dispose(bool disposing)

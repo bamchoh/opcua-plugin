@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
+using opcua_plugin.Domain.Configuration;
 using opcua_plugin.Infrastructure;
 using opcua_plugin.Services;
 using System.Text.Json;
@@ -48,6 +49,7 @@ namespace opcua_plugin
             builder.Services.AddGrpc();
             builder.Services.AddSingleton<PluginApplicationService>();
             builder.Services.AddSingleton<OpcUaServerFactory>();
+            builder.Services.AddSingleton<OpcUaServerOptions>();
 
             var app = builder.Build();
 

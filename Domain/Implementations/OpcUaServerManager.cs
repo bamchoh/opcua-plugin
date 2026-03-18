@@ -25,24 +25,20 @@ namespace opcua_plugin.Domain.Implementations
             this._accessor = accessor;
         }
 
-        public Task StartAsync(CancellationToken cancelToken, int portno, string appName)
+        public Task StartAsync(CancellationToken cancelToken, Domain.Configuration.OpcUaServerOptions options)
         {
             _application = OpcUaApplication.GetApplicationInstance();
-            _application.ApplicationConfiguration.ApplicationName = appName;
+            _application.ApplicationConfiguration.ApplicationName = options.ApplicationName;
             {
                 var ba = _application.ApplicationConfiguration.ServerConfiguration.BaseAddresses;
 
                 var hostname = System.Net.Dns.GetHostName();
-                var endpoint = string.Format("opc.tcp://{0}:{1}", hostname, portno);
+                var endpoint = string.Format("opc.tcp://{0}:{1}", hostname, options.Port.Value);
 
                 ba.Add(endpoint);
             }
 
-            _server = new OpcUaProtocolServer()
-            {
-                CancelToken = cancelToken,
-                Accessor = _accessor
-            };
+            _server = new OpcUaProtocolServer(options, _accessor, cancelToken);
 
             var task = _application.StartAsync(_server);
 
