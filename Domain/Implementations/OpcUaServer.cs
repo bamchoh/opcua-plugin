@@ -18,17 +18,17 @@ using System.Xml.Linq;
 
 namespace opcua_plugin.Domain.Implementations
 {
-    internal class OpcUaProtocolServer : StandardServer
+    public class OpcUaProtocolServer : StandardServer
     {
         public NodeManager NodeManager;
 
         public CancellationToken CancelToken;
 
-        public RemoteVariableStoreAccessor Accessor;
+        public IRemoteVariableStoreAccessor Accessor;
 
         public OpcUaServerOptions Options { get; }
 
-        public OpcUaProtocolServer(OpcUaServerOptions options, RemoteVariableStoreAccessor accessor, CancellationToken cancelToken)
+        public OpcUaProtocolServer(OpcUaServerOptions? options, IRemoteVariableStoreAccessor accessor, CancellationToken cancelToken)
         {
             Options = options ?? new OpcUaServerOptions();
             Accessor = accessor;
@@ -122,7 +122,7 @@ namespace opcua_plugin.Domain.Implementations
 
     public class NodeManager : CustomNodeManager2, INotifyPropertyChanged
     {
-        private RemoteVariableStoreAccessor _accessor;
+        private IRemoteVariableStoreAccessor _accessor;
 
         private Dictionary<string, PlcVariableInfo> _variables;
 
@@ -136,7 +136,7 @@ namespace opcua_plugin.Domain.Implementations
         private OpcUaServerOptions _options;
         #endregion
 
-        public NodeManager(IServerInternal server, ApplicationConfiguration configuration, RemoteVariableStoreAccessor accessor, CancellationToken cancellationToken, OpcUaServerOptions options)
+        public NodeManager(IServerInternal server, ApplicationConfiguration configuration, IRemoteVariableStoreAccessor accessor, CancellationToken cancellationToken, OpcUaServerOptions options)
         :
             base(server, configuration, Namespaces.Empty)
         {
@@ -507,7 +507,15 @@ namespace opcua_plugin.Domain.Implementations
                 lowerBound = varInfo.Parent.LowerBound;
             }
             MessagePackPathReader.TryGetMsgPackValue(valueMessagePack, parsedNodes, varInfo.ElemType, lowerBound, out var val);
+
             value = val;
+            if (val != null)
+            {
+                if (val is Array ary && indexRange.Count > 0 && indexRange.Count < ary.Length)
+                {
+                    value = ary.GetValue(indexRange.Begin);
+                }
+            }
 
             statusCode = StatusCodes.Good;
             timestamp = DateTime.UtcNow;

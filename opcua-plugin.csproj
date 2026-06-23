@@ -18,18 +18,18 @@
   </ItemGroup>
 
   <ItemGroup>
-	  <PackageReference Include="Google.Protobuf" Version="3.34.0" />
-	  <PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
-	  <PackageReference Include="Grpc.Tools" Version="2.78.0">
+	  <PackageReference Include="Google.Protobuf" Version="3.35.1" />
+	  <PackageReference Include="Grpc.AspNetCore" Version="2.80.0" />
+	  <PackageReference Include="Grpc.Tools" Version="2.81.1">
 	    <PrivateAssets>all</PrivateAssets>
 	    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 	  </PackageReference>
-	  <PackageReference Include="MessagePack" Version="3.1.4" />
-	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua" Version="1.5.378.106" />
-	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Configuration" Version="1.5.378.106" />
-	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Core" Version="1.5.378.106" />
-	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Security.Certificates" Version="1.5.378.106" />
-	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Server" Version="1.5.378.106" />
+	  <PackageReference Include="MessagePack" Version="3.1.7" />
+	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua" Version="1.5.378.145" />
+	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Configuration" Version="1.5.378.145" />
+	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Core" Version="1.5.378.145" />
+	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Security.Certificates" Version="1.5.378.145" />
+	  <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Server" Version="1.5.378.145" />
   </ItemGroup>
 
   <ItemGroup>

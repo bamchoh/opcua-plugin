@@ -24,7 +24,22 @@ namespace opcua_plugin.Infrastructure
         public string DataType { get; set; }
     }
 
-    public class RemoteVariableStoreAccessor
+    public interface IRemoteVariableStoreAccessor
+    {
+        public List<NodePublishingInfo> GetEnabledNodePublishings(string nodeId);
+
+        public (byte[] bytes, string error) ReadVariableValue(string variableId);
+
+        public void WriteVariableValue(string variableId, byte[] valueBytes);
+
+        public void WriteVariableField(string variableId, string fieldPath, byte[] valueBytes);
+
+        public AsyncServerStreamingCall<VariableChange> SubscribeVariableChanges();
+
+        public List<StructFieldInfo> GetStructFields(string dataType);
+    }
+
+    public class RemoteVariableStoreAccessor : IRemoteVariableStoreAccessor
     {
         private readonly VariableAccessorServiceClient _client;
         public RemoteVariableStoreAccessor(VariableAccessorServiceClient client)
